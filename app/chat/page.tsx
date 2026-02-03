@@ -21,6 +21,10 @@ export default function ChatPage() {
   const [text, setText] = useState("");
   const [closed, setClosed] = useState(false);
 
+  // gestione uscita robusta
+  const [leaving, setLeaving] = useState(false);
+
+  // sessione salvata al join
   const roomId =
     typeof window !== "undefined" ? sessionStorage.getItem("roomId") : null;
   const participantId =
@@ -49,7 +53,6 @@ export default function ChatPage() {
         const data = await res.json();
 
         if (!res.ok) {
-          // Se qualcosa va storto, torna a join
           router.push("/join");
           return;
         }
@@ -63,6 +66,7 @@ export default function ChatPage() {
         setWaiting(false);
         setConversationId(data.conversationId);
         setPartnerName(data.partnerName ?? "Anonimo");
+        setClosed(false);
       } catch {
         setTimeout(runMatch, 1500);
       }
@@ -101,21 +105,21 @@ export default function ChatPage() {
         const data = await res.json();
 
         if (!res.ok) {
-          // sessione non valida o altro: torna a join
           router.push("/join");
           return;
         }
 
+        // se l'altro esce o la chat viene chiusa lato server
         if (data?.closed) {
           setClosed(true);
-          return; // stop polling
+          return;
         }
 
         if (data?.messages?.length) {
           setMessages((prev) => [...prev, ...data.messages]);
         }
       } catch {
-        // ignora e riprova
+        // ignora errori transienti
       }
 
       setTimeout(poll, 1200);
@@ -135,7 +139,7 @@ export default function ChatPage() {
     const payload = {
       conversationId,
       participantId,
-      body: text,
+      body: text.trim(),
     };
 
     setText("");
@@ -147,26 +151,40 @@ export default function ChatPage() {
     });
   }
 
+  // Uscita "solo bottone": chiude sul server e SOLO dopo torna a /join.
   async function leave() {
-    if (!conversationId || !participantId) {
+    if (leaving) return;
+    setLeaving(true);
+
+    try {
+      if (conversationId && participantId) {
+        const res = await fetch("/api/dm/leave", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // aiuta su Safari/iOS quando si cambia pagina
+          keepalive: true as any,
+          body: JSON.stringify({ conversationId, participantId }),
+        });
+
+        if (!res.ok) {
+          alert("Non sono riuscito a chiudere la chat. Riprova.");
+          setLeaving(false);
+          return;
+        }
+      }
+
+      // pulizia UI e navigazione solo dopo OK
+      setConversationId(null);
+      setPartnerName(null);
+      setMessages([]);
+      setClosed(false);
+      setWaiting(true);
+
       router.push("/join");
-      return;
+    } catch {
+      alert("Errore di rete. Riprova.");
+      setLeaving(false);
     }
-
-    await fetch("/api/dm/leave", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ conversationId, participantId }),
-    });
-
-    // pulizia e ritorno a join
-    setConversationId(null);
-    setPartnerName(null);
-    setMessages([]);
-    setClosed(false);
-    setWaiting(true);
-
-    router.push("/join");
   }
 
   // Sessione mancante
@@ -188,10 +206,10 @@ export default function ChatPage() {
   if (waiting) {
     return (
       <div className="max-w-md mx-auto mt-16 text-center px-4">
-        <h1 className="text-2xl font-bold">In attesa di un partner…</h1>
-        <p className="mt-2 text-gray-600">Resta su questa schermata.</p>
+        <h1 className="text-2xl font-bold text-white">In attesa di un partner…</h1>
+        <p className="mt-2 text-gray-300">Resta su questa schermata.</p>
         <button
-          className="mt-6 border px-4 py-2 rounded"
+          className="mt-6 border px-4 py-2 rounded text-white"
           onClick={() => router.push("/join")}
         >
           Torna indietro
@@ -200,22 +218,20 @@ export default function ChatPage() {
     );
   }
 
-  // Chat chiusa
+  // Chat chiusa (l'altro è uscito o server ha chiuso)
   if (closed) {
     return (
       <div className="max-w-md mx-auto mt-16 text-center px-4">
-        <h1 className="text-2xl font-bold">Chat terminata</h1>
-        <p className="mt-2 text-gray-600">
+        <h1 className="text-2xl font-bold text-white">Chat terminata</h1>
+        <p className="mt-2 text-gray-300">
           Il tuo partner è uscito o la chat è stata chiusa.
         </p>
-        <div className="mt-6 flex justify-center gap-2">
-          <button
-            className="bg-blue-600 text-white px-4 py-2 rounded"
-            onClick={() => router.push("/join")}
-          >
-            Torna a Join
-          </button>
-        </div>
+        <button
+          className="mt-6 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+          onClick={() => router.push("/join")}
+        >
+          Torna a Join
+        </button>
       </div>
     );
   }
@@ -223,19 +239,23 @@ export default function ChatPage() {
   // UI chat
   return (
     <div className="max-w-md mx-auto mt-6 px-4">
-      {/* Header con ESCI */}
-<div className="mb-3 p-3 border rounded flex items-center justify-between gap-3 bg-gray-900 text-white">        <div>
-          <div className="text-sm text-gray-600">Tu: {displayName}</div>
-          <div className="font-semibold">Chat con: {partnerName}</div>
+      {/* Header */}
+      <div className="mb-3 p-3 border rounded flex items-center justify-between gap-3 bg-gray-900 text-white">
+        <div>
+          <div className="text-sm text-gray-200">Tu: {displayName}</div>
+          <div className="font-semibold text-white">Chat con: {partnerName}</div>
         </div>
 
-<button
-  onClick={leave}
-  className="px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition"
-  title="Esci e chiudi la chat"
->
-  ESCI
-</button>
+        <button
+          onClick={leave}
+          disabled={leaving}
+          className={`px-3 py-2 rounded text-white transition ${
+            leaving ? "bg-red-400 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
+          }`}
+          title="Esci e chiudi la chat"
+        >
+          {leaving ? "USCITA..." : "ESCI"}
+        </button>
       </div>
 
       {/* Messaggi */}
@@ -273,8 +293,8 @@ export default function ChatPage() {
 
       {/* Input */}
       <div className="mt-3 flex gap-2">
-<input
-  className="border flex-1 p-2 rounded bg-white text-black placeholder-gray-400"
+        <input
+          className="border flex-1 p-2 rounded bg-white text-black placeholder-gray-400"
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Scrivi…"
@@ -283,7 +303,7 @@ export default function ChatPage() {
           }}
         />
         <button
-          className="bg-blue-600 text-white px-4 rounded"
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
           onClick={send}
         >
           Invia
