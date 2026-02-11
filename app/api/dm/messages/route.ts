@@ -26,6 +26,15 @@ export async function GET(req: Request) {
 
   if (!mem) return NextResponse.json({ error: "Non autorizzato" }, { status: 403 });
 
+  // stato conversazione
+  const { data: conv } = await supabase
+    .from("dm_conversations")
+    .select("is_open")
+    .eq("id", conversationId)
+    .maybeSingle();
+
+  const closed = conv ? !conv.is_open : true;
+
   let q = supabase
     .from("dm_messages")
     .select("id, body, created_at, sender_id, participants(display_name)")
@@ -36,5 +45,6 @@ export async function GET(req: Request) {
   if (since) q = q.gt("created_at", since);
 
   const { data } = await q;
-  return NextResponse.json({ messages: data ?? [] });
+
+  return NextResponse.json({ messages: data ?? [], closed });
 }

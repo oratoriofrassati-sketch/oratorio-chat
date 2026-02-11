@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useEffect } from "react";
 
 function getClientToken() {
   const key = "oratorio_client_token";
@@ -17,6 +19,13 @@ export default function JoinPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const router = useRouter();
+  
+  const searchParams = useSearchParams();
+
+useEffect(() => {
+  const r = searchParams.get("room");
+  if (r) setCode(r.toUpperCase());
+}, [searchParams]);
 
   async function join() {
     setError("");
