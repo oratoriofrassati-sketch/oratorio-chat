@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-
 
 function getClientToken() {
   const key = "oratorio_client_token";
@@ -18,6 +17,14 @@ export default function JoinPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const router = useRouter();
+
+  // Prefill da QR: /join?room=ORATORIO1
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const r = params.get("room");
+    if (r) setCode(r.trim().toUpperCase());
+  }, []);
 
   async function join() {
     setError("");
@@ -57,10 +64,7 @@ export default function JoinPage() {
         onChange={(e) => setCode(e.target.value)}
       />
 
-      <button
-        onClick={join}
-        className="mt-4 w-full bg-blue-600 text-white py-2"
-      >
+      <button onClick={join} className="mt-4 w-full bg-blue-600 text-white py-2">
         Entra
       </button>
 
