@@ -1,108 +1,70 @@
 "use client";
 
-export const dynamic = "force-dynamic";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
-import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+
+function getClientToken() {
+  const key = "oratorio_client_token";
+  let t = localStorage.getItem(key);
+  if (!t) {
+    t = crypto.randomUUID();
+    localStorage.setItem(key, t);
+  }
+  return t;
+}
 
 export default function JoinPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
   const [code, setCode] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const router = useRouter();
 
-  // Prefill da QR: /join?room=ORATORIO1
-  useEffect(() => {
-    const r = searchParams.get("room");
-    if (r) setCode(r.toUpperCase().trim());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  async function join() {
+    setError("");
+    const clientToken = getClientToken();
 
-  async function enter() {
-    setErr(null);
+    const res = await fetch("/api/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        roomCode: code.trim().toUpperCase(),
+        clientToken,
+      }),
+    });
 
-    const roomCode = code.trim().toUpperCase();
-    if (!roomCode) {
-      setErr("Inserisci il codice stanza.");
+    const data = await res.json();
+
+    if (!res.ok) {
+      setError(data.error || "Errore");
       return;
     }
 
-    setLoading(true);
+    sessionStorage.setItem("roomId", data.roomId);
+    sessionStorage.setItem("participantId", data.participantId);
+    sessionStorage.setItem("displayName", data.displayName);
 
-    try {
-      const res = await fetch("/api/join", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomCode }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setErr(data?.error ?? "Errore durante l’accesso.");
-        setLoading(false);
-        return;
-      }
-
-      // Salva sessione (per questa tab)
-      sessionStorage.setItem("roomId", data.roomId);
-      sessionStorage.setItem("participantId", data.participantId);
-      sessionStorage.setItem("displayName", data.displayName);
-
-      router.push("/chat");
-    } catch {
-      setErr("Errore di rete. Riprova.");
-      setLoading(false);
-    }
+    router.push("/chat");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-black">
-      <div className="w-full max-w-md border rounded-lg p-6 bg-white">
-        <h1 className="text-2xl font-bold text-gray-900">Entra nella chat</h1>
-        <p className="mt-2 text-gray-600">
-          Inserisci il codice stanza (es. <b>ORATORIO1</b>).
-        </p>
+    <div className="max-w-sm mx-auto mt-16 text-center">
+      <h1 className="text-2xl font-bold mb-4">Entra nella chat</h1>
 
-        <div className="mt-5">
-          <label className="block text-sm font-medium text-gray-700">
-            Codice stanza
-          </label>
-          <input
-            className="mt-2 w-full border p-3 rounded text-black placeholder-gray-400"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="ORATORIO1"
-            autoCapitalize="characters"
-            autoCorrect="off"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") enter();
-            }}
-          />
-        </div>
+      <input
+        className="border w-full p-2 text-center"
+        placeholder="Codice stanza"
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+      />
 
-        {err && (
-          <div className="mt-4 text-sm text-red-700 bg-red-50 border border-red-200 p-3 rounded">
-            {err}
-          </div>
-        )}
+      <button
+        onClick={join}
+        className="mt-4 w-full bg-blue-600 text-white py-2"
+      >
+        Entra
+      </button>
 
-        <button
-          onClick={enter}
-          disabled={loading}
-          className={`mt-5 w-full px-4 py-3 rounded text-white transition ${
-            loading ? "bg-blue-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
-          }`}
-        >
-          {loading ? "Accesso..." : "Entra"}
-        </button>
-
-        <div className="mt-4 text-xs text-gray-500">
-          Nota: per uscire dalla chat usa il pulsante <b>ESCI</b>.
-        </div>
-      </div>
+      {error && <p className="text-red-600 mt-3">{error}</p>}
     </div>
   );
 }
